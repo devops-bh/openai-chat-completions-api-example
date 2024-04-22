@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Interface</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.3/css/bulma.min.css">
+</head>
+
+<body>
+    <!-- this is just for the proof of concept -->
+    <input class="input" type="text" id="name" placeholder="Type your name...">
+
+    <section class="section">
+        <div class="container">
+            <div class="columns is-mobile is-vcentered">
+                <div class="column is-12">
+                    <div class="box" id="messages" style="height: 80vh; overflow-y: auto;">
+                        <!-- Messages will be appended here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <footer class="footer">
+        <div class="content has-text-centered">
+            <div class="field is-grouped">
+                <div class="control is-expanded">
+                    <input class="input" type="text" id="chatInput" placeholder="Type your message...">
+                </div>
+                <div class="control">
+                    <button class="button is-primary" id="send">Send</button>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        document.querySelector("#send").addEventListener("click", async e => {
+            renderMessage("user", document.querySelector("#chatInput").value)
+            // could probably do a setTimeout & display 3 dots to mimic typing 
+            const response = await
+                fetch("http://localhost:3000/ask?name=" + document.querySelector("#name").value
+                    + "&question=" + document.querySelector("#chatInput").value);
+            response.json().then(gpt_response => {
+                renderMessage("gpt", gpt_response.data)
+                document.querySelector("#chatInput").value = ""
+            });
+        })
+
+        function renderMessage(author, message) {
+            const chatInput = document.getElementById('chatInput');
+            const messages = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', 'is-primary');
+            // [todo] replace 1 of the image sources 
+            const img_src = author == "user" ? "https://bulma.io/images/placeholders/48x48.png" : "https://images.pexels.com/photos/8849295/pexels-photo-8849295.jpeg?auto=compress&cs=tinysrgb&w=600"
+            messageDiv.innerHTML = `
+                <div class="message-body">
+                    <figure class="image is-48x48">
+                        <img src="${img_src}">
+                    </figure>
+                    ${message}
+                </div>
+            `;
+            messages.appendChild(messageDiv);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+
+    </script>
+</body>
+
+</html>
