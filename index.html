@@ -44,7 +44,9 @@
                 fetch("http://localhost:3000/ask?name=" + document.querySelector("#name").value
                     + "&question=" + document.querySelector("#chatInput").value);
             response.json().then(gpt_response => {
+                console.log("[debugging]", gpt_response)
                 renderMessage("gpt", gpt_response.data)
+                console.log("[debugging]", gpt_response.cache_policy)
                 document.querySelector("#chatInput").value = ""
             });
         })

@@ -28,11 +28,8 @@ There's then the question of how much does the quality of responses etc vary?
 const fs = require('fs')
 const csv = require('csv-parser')
 // todo [refactor] decide whether to use ES6 module syntax or CommonJS 
-//const betterSSE = require("better-sse")
-const EventEmitter = require('node:events');
 const OpenAI = require('openai');
 
-const betterSSE = require("better-sse")
 const express = require('express')
 const cors = require('cors')
 const app = express()
@@ -45,8 +42,6 @@ const openai = new OpenAI({
   // generally API keys should be kept secret e.g. with a .env file which is never commited to the repository etc 
   apiKey: '' // process.env['OPENAI_API_KEY'], 
 });
-
-const responseEmitter = new EventEmitter();
 
 /* 
 is the OpenAI API strictly server side or can it be used client side 
@@ -278,6 +273,36 @@ I understand that it can be a scary thought not being able to provide for yourse
 
 //let question = "I'm scared that I won't be able to provide for myself or my family" 
 
+// this is like the cache 
+/* {question, response} */
+/* 
+Again, I'd probably have more confident in this if we were only giving GPT the CSV file for 
+a specific user 
+But sadly the concept of users in this codebase was an afterthought 
+
+So at this point its just a guess (& hope) that (via a high enough threshold) the application 
+does not accidentally leak data 
+
+If the CSV file was to incur changes, then the threshold would need to be consider the CSV file too 
+
+The above reasons are why I decided to add a name, 
+if we had built in the concept of users from the get go then I don't think this would be an issue 
+But having the name also adds an element of analytics (though, depends on how much both parties 
+  want the system to be "confidential") 
+Anyway, essentially the cache-retrieval only happens when a user asked a similar question to 
+what they had already asked, costs could be cut further if questions were "crowd-asked" 
+But we'd likely need to either restart, or at least make significant changes to accomplish this 
+
+
+*/
+/* 
+let past_questions_and_responses = [
+  { question: "define debt management?", response: "just testing", name: "Amy Holmes" }, 
+  { question: "Amy did not ask?", response: "just testing", name: "Christ Patron" }, 
+  {question: "what is debt management?", response: "still testing", name: "Amy Holmes"}
+]*/
+let past_questions_and_responses = []
+
 // this is really a set (set theory) as it'll not contain duplicates 
 // there's likely a bug regarding this but it doesn't affect the GPT response etc 
 let financially_optimistic_customers = ["Amy Holmes", "John Doe", "Bruce Wayne"] 
@@ -294,10 +319,12 @@ function replaceRange(s, start, end, substitute) {
 // Process the CSV file 
 // todo [refactor]: replace promises with async await syntax 
 function readCSVAndAskGPT(name, question) {
+  // could probably optimize this e.g. a better search algorithm, or sort alphabetically & use the initial letter
   return processCsvFile('customerdata.csv')
   .then(async data => {
     /* I suppose you could maybe another AI system which tries to detect these? 
     or at least classifies inputs as "reasonable user behavior"
+    [todo] move this could into the frontend 
     */
       if (question.toLowerCase().includes("simon says") || 
         question.toLowerCase().includes("say Response: ")
@@ -338,7 +365,7 @@ function readCSVAndAskGPT(name, question) {
       mindset-classification: {{answer}}\n
       if the input-classification is a statement ignore the rest of this text and respond with words of encouragement\n
       Response: {{response}}
-      else if the input-classification is a question, respond to the question response: 
+      else if the input-classification is a question, respond to the question but do not say this is a question response: 
       Response: {{response}}
       Do not output JSON
       `
@@ -383,11 +410,11 @@ function readCSVAndAskGPT(name, question) {
           // So i wonder if the assistant agent is less ephemeral than the completion API agent 
           messages: [/*{"role": "system", "content": "You are a helpful finance assistant."},*/
           // should "name" be given inside of the question or inside the prompt? Where we could provide name during an initial request
-              {"role": "user", "content": `${name} says '${prompt}'`}], // leaving "only provide data regarding ${name}" prevents the classification
+              {"role": "user", "content": `${name} says '${prompt}', only provide data regarding ${name}`}], // leaving "only provide data regarding ${name}" prevents the classification
           model: "gpt-3.5-turbo", // different models = different prices, probably just use GPT 3.5 as it'll be cheaper 
           // https://platform.openai.com/docs/api-reference/chat/create#chat-create-seed
           // the prompt's response may have regressed
-          seed: 30, temperature: 0
+          seed: 30 //, temperature: 0
         });
         console.log(completion)
         // display this response somehow (e.g. as HTTP/Websocket/SSEvent response)
@@ -473,12 +500,101 @@ function readCSVAndAskGPT(name, question) {
     });
   } 
     
+/* 
 app.get('/ask', async (req, res) => {
-  console.log(req.query.name)
+  let name = req.query.name 
+  let question = req.query.question
+  let past_questions_and_responses_for_current_user = past_questions_and_responses.filter(past_questions_and_response => past_questions_and_response.name == name);
+  // remember this returns undefined which is a bit confusing 
+  let has_exact_question_been_asked_before = past_questions_and_responses_for_current_user.find(past_questions_and_response => past_questions_and_response.question === question);
+  if (has_exact_question_been_asked_before != undefined) {
+    console.log("[debugging] has_exact_question_been_asked_before: " + has_exact_question_been_asked_before.question + " - "+ has_exact_question_been_asked_before.response)
+    // respond with 
+      res.end(JSON.stringify({
+        data: has_exact_question_been_asked_before.response,
+        cache_policy: "asked-before"
+      }))
+      console.log("[debugging] cache-policy: ", "asked-before")    
+      return
+  }
+  past_questions_and_responses_for_current_user.map(question_and_response => {
+    console.log("[debugging] checking for similarity")
+    return fetch(`http://127.0.0.1:8001/similarity/?current=${question}&past=${question_and_response.question}`).then(res => res.json()).then(similarity => {
+      // the threshold was chosen arbitrarily, analytics could help tweak this 
+      if (Number(similarity.similarity) >= 0.85) {
+        // sadly 1 niave implicit from this is that it'll select 
+        // when hypothetically, 2 items may have the same (or extremely close) similarity threshold
+        // so perhaps you'd want to try multiple similarity thresholds until you decide that there's no similar enoughs 
+        res.end(JSON.stringify({
+          data: question_and_response.response,
+          cache_policy: "cosine-similarity", "similarity": similarity.similarity
+        }))
+        console.log("[debugging] cache-policy: ", "cosine-similarity")    
+        return 
+      } 
+      console.log("[debugging] similarity", similarity.similarity)
+    }).catch(err => {
+      console.log("[debugging] similarity endpoint failed")
+      console.error(err)
+    })
+  })
+  
+  //console.log(req.query.name)
   const gpt_response = await readCSVAndAskGPT(req.query.name, req.query.question)
-  console.log(gpt_response)
-  res.send(JSON.stringify({data: gpt_response}))
+  //console.log(gpt_response)
+  console.log("[debugging] cache-policiy: ", "none")
+  res.send(JSON.stringify({data: gpt_response, cache_policy: "none"}))
+  // appending to past_questions_and_responses & not the user specific one is cause I had the idea of cache-ing being crowd sourced  
+  // e.g. if Tim asked a question which had a response non specific to Tim, then Jill asking the same question would get the cached answer rather than the GPT regenerating the answer
+  past_questions_and_responses.push({question, response: gpt_response, name})
+  console.log("[debugging] past_questions_and_responses.length: ", past_questions_and_responses.length)
 })
+*/
+
+app.get('/ask', async (req, res) => {
+ try {
+    let name = req.query.name;
+    let question = req.query.question;
+    let past_questions_and_responses_for_current_user = past_questions_and_responses.filter(past_questions_and_response => past_questions_and_response.name == name);
+
+    let has_exact_question_been_asked_before = past_questions_and_responses_for_current_user.find(past_questions_and_response => past_questions_and_response.question === question);
+    if (has_exact_question_been_asked_before) {
+      console.log("[debugging] has_exact_question_been_asked_before: " + has_exact_question_been_asked_before.question + " - " + has_exact_question_been_asked_before.response);
+      res.json({
+        data: has_exact_question_been_asked_before.response,
+        cache_policy: "asked-before"
+      });
+      console.log("[debugging] cache-policy: ", "asked-before");
+      return;
+    }
+
+    for (let question_and_response of past_questions_and_responses_for_current_user) {
+      console.log("[debugging] checking for similarity");
+      const similarityResponse = await fetch(`http://127.0.0.1:8001/similarity/?current=${question}&past=${question_and_response.question}`);
+      const similarity = await similarityResponse.json();
+      if (Number(similarity.similarity) >= 0.85) {
+        console.log("[debugging] cache-policy: ", "cosine-similarity");
+        res.json({
+          data: question_and_response.response,
+          cache_policy: "cosine-similarity",
+          similarity: similarity.similarity
+        });
+        return;
+      }
+      console.log("[debugging] similarity", similarity.similarity);
+    }
+
+    const gpt_response = await readCSVAndAskGPT(req.query.name, req.query.question);
+    console.log("[debugging] cache-policy: ", "none");
+    res.json({data: gpt_response, cache_policy: "none"});
+    past_questions_and_responses.push({question, response: gpt_response, name});
+    console.log("[debugging] past_questions_and_responses.length: ", past_questions_and_responses.length);
+ } catch (err) {
+    console.error("[debugging] Error occurred: ", err);
+    res.status(500).json({error: "An error occurred while processing your request."});
+ }
+});
+
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`)
 })
