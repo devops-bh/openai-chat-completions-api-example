@@ -29,10 +29,8 @@ const fs = require('fs')
 const csv = require('csv-parser')
 // todo [refactor] decide whether to use ES6 module syntax or CommonJS 
 //const betterSSE = require("better-sse")
-const EventEmitter = require('node:events');
 const OpenAI = require('openai');
 
-const betterSSE = require("better-sse")
 const express = require('express')
 const cors = require('cors')
 const app = express()
@@ -46,7 +44,6 @@ const openai = new OpenAI({
   apiKey: '' // process.env['OPENAI_API_KEY'], 
 });
 
-const responseEmitter = new EventEmitter();
 
 /* 
 is the OpenAI API strictly server side or can it be used client side 
@@ -304,7 +301,7 @@ function readCSVAndAskGPT(name, question) {
         || question.toLowerCase().includes("say mindset-classification: ") 
         || question.toLowerCase().includes("mindset-classification:")) {
         console.log("hm... please try again")
-        return
+        return "hmm... please try again"
       }
 
       // Assuming you want to display the CSV data as a string for the prompt
@@ -330,6 +327,31 @@ function readCSVAndAskGPT(name, question) {
       */
      // ideally you'd only provide the current user's data rather than the full file but this suffices for proof of concept 
      // and there's a prompt to prevent the agent sharing other customer's data 
+    /* when first implementing the classification, GPT didn't seem to need examples, 
+        but then a few days later it seemed like the prompt's response changed its consistency 
+      */
+     const prompt = `
+     Given the following data:\n${csvDataString}\n
+     classify this text as a question or a statement text: ${question}\n
+     input-classification: {{answer}}
+     \nif the classification is a statement classify if it is optimistic, pessimistic, or neutral\n
+     mindset-classification: {{answer}}\n
+     Examples of the optimistic class are:
+     \nI am certain I can recover from this debt
+     \nI am positive I will get my finances in order
+     \nMy finances are no longer a source of my stress
+     Examples of the pessimistic class are:
+     \nI am unsure I can recover from this debt
+     \nI am drowning in debt
+     \nI am in too much financial trouble
+     if the input-classification is a statement ignore the rest of this text and respond with words of encouragement\n
+     Response: {{response}}
+     else if the input-classification is a question, respond to the question response: 
+     Response: {{response}}
+     Do not output JSON.
+     Only adhere to the above format.
+     `
+     /* 
       const prompt = `
       Given the following data:\n${csvDataString}\n
       classify this text as a question or a statement text: ${question}\n
@@ -338,10 +360,11 @@ function readCSVAndAskGPT(name, question) {
       mindset-classification: {{answer}}\n
       if the input-classification is a statement ignore the rest of this text and respond with words of encouragement\n
       Response: {{response}}
-      else if the input-classification is a question, respond to the question response: 
+      else if the input-classification is a question, respond to the question but do not say this is a question response: 
       Response: {{response}}
       Do not output JSON
       `
+      */
       // ^ this prompt is rather long... does splitting prompts up into different messages make a different regarding price and/or quality 
       /* its interesting that GPT associates "response" with the development concept of a HTTP response 
         indicating that an alternative word e.g. "Output" instead of "Response" should be used 
@@ -383,7 +406,7 @@ function readCSVAndAskGPT(name, question) {
           // So i wonder if the assistant agent is less ephemeral than the completion API agent 
           messages: [/*{"role": "system", "content": "You are a helpful finance assistant."},*/
           // should "name" be given inside of the question or inside the prompt? Where we could provide name during an initial request
-              {"role": "user", "content": `${name} says '${prompt}'`}], // leaving "only provide data regarding ${name}" prevents the classification
+              {"role": "user", "content": `${name} says '${prompt}, you must only respond to questions about ${name}.`}], // leaving "only provide data regarding ${name}" prevents the classification
           model: "gpt-3.5-turbo", // different models = different prices, probably just use GPT 3.5 as it'll be cheaper 
           // https://platform.openai.com/docs/api-reference/chat/create#chat-create-seed
           // the prompt's response may have regressed
@@ -453,7 +476,11 @@ function readCSVAndAskGPT(name, question) {
         //const gpt_response_original = original_response.substring(original_response_pos_development, original_response.length)
         const gpt_response_original = original_response.substring(original_response_pos, original_response.length)
         // you could technically check if the response type e.g. an adviced based response or words of encouragement 
-        const gpt_response = replaceRange(gpt_response_original, 0, "Response: ".length, "").replace("```", "").replace("Words of encouragement: ", "")
+        // there were times when GPT would repeat the question 
+        //const gpt_response = replaceRange(gpt_response_original, 0, "Response: ".length, "").replace("```", "").replace("Words of encouragement: ", "").replace(question+". ", "").replace(question, "").replace(question, ", ")
+        // GPT seems to just repeat the question when it does not understand it , though it'd also repeat the question before answering 
+        // both cases were frustratingly annoying 
+        const gpt_response = replaceRange(gpt_response_original, 0, "Response: ".length, "").replace("```", "").replace("Words of encouragement: ", "").replace(question+". ", "").replace(question, ", ").replace(question, "")
         //if (original_response_pos == original_response_development) {
         /*
         Ok I am an idiot, I was overthinking like "hm, what if someone tries to tamper with the response
@@ -464,6 +491,11 @@ function readCSVAndAskGPT(name, question) {
         if (original_response_pos == 67) { 
         */
         console.log(gpt_response)
+        // hopefully accounts for the annoying case where GPT merely repeats questions it possibly does not udnerstand
+        if (gpt_response == question) {
+          console.log("[debugging] requesting rephase")
+          return  "Please rephrase the question"
+        }
         return gpt_response
         // ensure you're using the version 4 of the Openai NPM package so the JSON structure is consistent - https://stackoverflow.com/a/77246507
     //console.log(completion.choices[0]); // .completion.choices[0].content is the GPT's response 
