@@ -282,6 +282,14 @@ let financially_pessimistic_customers = []
 console.log(`[debugging] financially_pessimistic_customers: ${financially_pessimistic_customers} 
 financially_optimistic_customers: ${financially_optimistic_customers}`)
 
+/* 
+let past_questions_and_responses = [
+  { question: "define debt management?", response: "just testing", name: "Amy Holmes" }, 
+  { question: "Amy did not ask?", response: "just testing", name: "Christ Patron" }, 
+  {question: "what is debt management?", response: "still testing", name: "Amy Holmes"}
+]*/
+let past_questions_and_responses = []
+
 
 // https://stackoverflow.com/a/12568270
 function replaceRange(s, start, end, substitute) {
@@ -505,12 +513,57 @@ function readCSVAndAskGPT(name, question) {
     });
   } 
     
+
+
 app.get('/ask', async (req, res) => {
-  console.log(req.query.name)
-  const gpt_response = await readCSVAndAskGPT(req.query.name, req.query.question)
-  console.log(gpt_response)
-  res.send(JSON.stringify({data: gpt_response}))
-})
+ try {
+    let name = req.query.name;
+    let question = req.query.question;
+    let regenerate = req.query.regenerate;
+    let past_questions_and_responses_for_current_user = past_questions_and_responses.filter(past_questions_and_response => past_questions_and_response.name == name);
+
+    let has_exact_question_been_asked_before = past_questions_and_responses_for_current_user.find(past_questions_and_response => past_questions_and_response.question === question);
+    if (has_exact_question_been_asked_before) {
+      console.log("[debugging] has_exact_question_been_asked_before: " + has_exact_question_been_asked_before.question + " - " + has_exact_question_been_asked_before.response);
+      res.json({
+        data: has_exact_question_been_asked_before.response,
+        cache_policy: "asked-before"
+      });
+      console.log("[debugging] cache-policy: ", "asked-before");
+      return;
+    }
+
+    console.log("[debugging] regenerate: ", regenerate)
+    if (regenerate == "false") {
+      for (let question_and_response of past_questions_and_responses_for_current_user) {
+        console.log("[debugging] checking for similarity");
+        const similarityResponse = await fetch(`http://127.0.0.1:8001/similarity/?current=${question}&past=${question_and_response.question}`);
+        const similarity = await similarityResponse.json();
+        if (Number(similarity.similarity) >= 0.85) {
+          console.log("[debugging] cache-policy: ", "cosine-similarity");
+          res.json({
+            data: question_and_response.response,
+            cache_policy: "cosine-similarity",
+            similarity: similarity.similarity
+          });
+          return;
+        }
+        console.log("[debugging] similarity", similarity.similarity);
+      }
+    } 
+
+    const gpt_response = await readCSVAndAskGPT(req.query.name, req.query.question);
+    console.log("[debugging] cache-policy: ", "none");
+    res.json({data: gpt_response, cache_policy: "none"});
+    past_questions_and_responses.push({question, response: gpt_response, name});
+    console.log("[debugging] past_questions_and_responses.length: ", past_questions_and_responses.length);
+ } catch (err) {
+    console.error("[debugging] Error occurred: ", err);
+    res.status(500).json({error: "An error occurred while processing your request."});
+ }
+});
+
+
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`)
 })

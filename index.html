@@ -32,6 +32,10 @@
                 <div class="control">
                     <button class="button is-primary" id="send">Send</button>
                 </div>
+                <div>
+                    <input type="checkbox" id="regenerate" name="regenerate" />
+                    <label for="regenerate">regenerate</label>
+                </div>
             </div>
         </div>
     </footer>
@@ -40,13 +44,16 @@
         document.querySelector("#send").addEventListener("click", async e => {
             renderMessage("user", document.querySelector("#chatInput").value)
             // could probably do a setTimeout & display 3 dots to mimic typing 
+            const regenerate = document.querySelector("#regenerate").checked
             const response = await
                 fetch("http://localhost:3000/ask?name=" + document.querySelector("#name").value
-                    + "&question=" + document.querySelector("#chatInput").value);
-            response.json().then(gpt_response => {
-                renderMessage("gpt", gpt_response.data)
-                document.querySelector("#chatInput").value = ""
-            });
+                    + "&question=" + document.querySelector("#chatInput").value + "&regenerate="+regenerate);
+                    response.json().then(gpt_response => {
+                        console.log("[debugging]", gpt_response)
+                        renderMessage("gpt", gpt_response.data)
+                        console.log("[debugging]", gpt_response.cache_policy)
+                        document.querySelector("#chatInput").value = ""
+                    });
         })
 
         function renderMessage(author, message) {
