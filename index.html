@@ -6,6 +6,59 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chat Interface</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.3/css/bulma.min.css">
+<style>
+          .section {
+        padding: 0;
+      }
+      .footer {
+        padding: 1.5rem;
+
+      }
+      .footer .content {
+        display: flex;
+        justify-content: center;
+
+      }
+      .footer .field.is-grouped {
+        max-width: 600px;
+      }
+      .footer .field.is-grouped .control {
+        flex-grow: 1;
+      }
+      #messages {
+        max-height: 60vh; 
+      }
+      #name {
+        width: 50%; 
+        margin-top: 2rem; 
+        margin-bottom: 1rem;
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      #chatInput {
+        width: 200%; 
+    max-width: none;
+    box-sizing: border-box; 
+    padding: 0.5rem;
+      }
+
+      #send {
+    width: auto; 
+    margin-left: 11.5rem;
+  }
+   /*  for mobile */
+      @media (max-width: 768px) {
+
+        .footer .field.is-grouped {
+          flex-wrap: wrap;
+        }
+        .footer .field.is-grouped .control {
+          width: 100%;
+          margin-bottom: 0.5rem;
+        }
+      }
+    </style>
 </head>
 
 <body>
